@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
+// Switch removed along with save history feature
 import { Settings, Send } from "lucide-react";
 
 // Minimal, elegant, isolated chat POC with a right-side settings panel that is always on-page
@@ -40,52 +40,14 @@ export default function ChatPOC() {
   const [errorDetails, setErrorDetails] = useState<UpstreamErrorDetails | null>(
     null
   );
-  const [model, setModel] = useState<string>(
-    process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-5-mini"
-  );
-  const [saveHistory, setSaveHistory] = useState<boolean>(false);
-  const [systemPrompt, setSystemPrompt] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
   // Removed global cumulative usage display per request
 
-  // Load persisted settings + history
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("chat_poc_state_v1");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed.messages)) setMessages(parsed.messages);
-        if (typeof parsed.model === "string") setModel(parsed.model);
-        if (typeof parsed.systemPrompt === "string")
-          setSystemPrompt(parsed.systemPrompt);
-        if (typeof parsed.saveHistory === "boolean")
-          setSaveHistory(parsed.saveHistory);
-      }
-    } catch {}
-  }, []);
-
-  // Persist when opted in
-  useEffect(() => {
-    if (!saveHistory) return;
-    const payload = { messages, model, systemPrompt, saveHistory };
-    try {
-      localStorage.setItem("chat_poc_state_v1", JSON.stringify(payload));
-    } catch {}
-  }, [messages, model, systemPrompt, saveHistory]);
+  // Save history feature removed: no local storage persistence
 
   const clearConversation = useCallback(() => {
     setMessages([]);
-    if (saveHistory) {
-      try {
-        const payload = {
-          messages: [],
-          model,
-          systemPrompt,
-          saveHistory,
-        };
-        localStorage.setItem("chat_poc_state_v1", JSON.stringify(payload));
-      } catch {}
-    }
-  }, [model, systemPrompt, saveHistory]);
+  }, []);
 
   // Build OpenAI style context
   const buildContext = () =>
@@ -116,14 +78,12 @@ export default function ChatPOC() {
     try {
       interface PayloadBase {
         messages: { role: string; content: string }[];
-        model: string;
-        systemPrompt?: string;
         stream?: boolean;
+        userId?: string;
       }
       const base: PayloadBase = {
         messages: [...buildContext(), { role: "user", content: userMsg.text }],
-        model,
-        systemPrompt: systemPrompt || undefined,
+        userId: userId || undefined,
       };
       const bodyPayload: PayloadBase = base; // no temperature field
       const res = await fetch("/api/chat", {
@@ -202,8 +162,8 @@ export default function ChatPOC() {
 
   return (
     <div className="min-h-screen bg-neutral-50 grid place-items-center p-6">
-      <Card className="w-full max-w-5xl shadow-lg border-neutral-200">
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
+      <Card className="w-full max-w-5xl shadow-lg border-neutral-200 gap-0 pb-0">
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle className="text-xl tracking-tight">Chat POC</CardTitle>
           <div className="flex items-center gap-2">
             <Button
@@ -309,14 +269,7 @@ export default function ChatPOC() {
                 showSettings ? "" : "md:hidden"
               }`}
             >
-              <SettingsPanel
-                model={model}
-                setModel={setModel}
-                saveHistory={saveHistory}
-                setSaveHistory={setSaveHistory}
-                systemPrompt={systemPrompt}
-                setSystemPrompt={setSystemPrompt}
-              />
+              <SettingsPanel userId={userId} setUserId={setUserId} />
             </aside>
           </div>
         </CardContent>
@@ -452,22 +405,11 @@ function formatTokens(n: number) {
 }
 
 interface SettingsPanelProps {
-  model: string;
-  setModel: (v: string) => void;
-  saveHistory: boolean;
-  setSaveHistory: (v: boolean) => void;
-  systemPrompt: string;
-  setSystemPrompt: (v: string) => void;
+  userId: string;
+  setUserId: (v: string) => void;
 }
 
-function SettingsPanel({
-  model,
-  setModel,
-  saveHistory,
-  setSaveHistory,
-  systemPrompt,
-  setSystemPrompt,
-}: SettingsPanelProps) {
+function SettingsPanel({ userId, setUserId }: SettingsPanelProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="p-4">
@@ -476,33 +418,14 @@ function SettingsPanel({
       <Separator />
       <div className="p-4 overflow-y-auto space-y-6 text-sm">
         <div className="grid gap-2">
-          <Label>Model</Label>
+          <Label>User ID</Label>
           <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="model"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            placeholder="e.g. user-123 or email"
           />
         </div>
-        {/* Temperature control removed per simplification request */}
-        <div className="grid gap-2">
-          <Label>System Prompt</Label>
-          <Input
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-            placeholder="optional system prompt"
-          />
-        </div>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="font-normal">Save history</Label>
-              <div className="text-[11px] text-neutral-500">
-                Persist locally
-              </div>
-            </div>
-            <Switch checked={saveHistory} onCheckedChange={setSaveHistory} />
-          </div>
-        </div>
+        {/* Save history removed */}
       </div>
     </div>
   );

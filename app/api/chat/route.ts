@@ -1,247 +1,207 @@
-// app/api/chat/route.ts
-/**
- * Minimal chat route using the official OpenAI Agents SDK, non-streaming.
- * Logs each agent action and logs token usage after the model call.
- *
- * UI contract (unchanged):
- *  POST /api/chat
- *    { messages: Array<{ role: "user" | "assistant" | "system"; text?: string; content?: string }> }
- *  Response:
- *    {
- *      reply: string,
- *      usage: { promptTokens?: number, completionTokens?: number, cachedTokens?: number },
- *      events: Array<{ type: string; data: unknown }>,
- *      usageSnapshots: Array<{ index: number; input_tokens?: number; output_tokens?: number; cached_tokens?: number; total_tokens?: number }>
- *    }
- *
- * Notes:
- *  - We rely on the Agents SDK to aggregate usage for the entire run on result.usage.
- *  - We also iterate rawResponses to log per call usage snapshots.
- *  - We use extractAllTextOutput for robust message text logging.
- *
- * References:
- *  Results and newItems: https://openai.github.io/openai-agents-js/guides/results/  :contentReference[oaicite:0]{index=0}
- *  Tools guide: https://openai.github.io/openai-agents-js/guides/tools/  :contentReference[oaicite:1]{index=1}
- *  Usage fields overview, including cached tokens: https://openai.github.io/openai-agents-python/usage/  :contentReference[oaicite:2]{index=2}
- */
+// Force Node.js runtime (mem0 + Agents SDK require Node environment)
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   Agent,
   run,
   tool,
-  user,
+  user as userMsg,
   assistant as assistantMsg,
-  system as systemMsg,
-  extractAllTextOutput,
-  type AgentInputItem,
 } from "@openai/agents";
-import { setDefaultOpenAIKey } from "@openai/agents-openai";
-import { z } from "zod";
+import MemoryClient from "mem0ai";
 
-export const runtime = "nodejs";
+// Simple singleton for Mem0 client
+let mem0Client: any;
+function getMem0() {
+  if (!mem0Client) {
+    const apiKey = process.env.MEM0_API_KEY || "";
+    mem0Client = new MemoryClient({ apiKey });
+  }
+  return mem0Client;
+}
 
-// One time API key setup
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-if (OPENAI_API_KEY) setDefaultOpenAIKey(OPENAI_API_KEY);
-else console.warn("[/api/chat] Missing OPENAI_API_KEY");
-
-// Example tool for demo
-const getTimeTool = tool({
-  name: "get_time",
-  description: "Get the current time in ISO 8601 format.",
+// Tools: add_memory, search_memories
+const addMemoryTool = tool({
+  name: "add_memory",
+  description:
+    "Persist a short, stable, privacy-safe fact about the user. Use for preferences, profile or long-term facts. Avoid secrets or ephemeral info.",
   parameters: z.object({
-    timezoneHint: z.string().describe("Human hint like 'local' or 'UTC'."),
+    text: z
+      .string()
+      .min(1)
+      .describe("One short sentence to remember about the user"),
   }),
-  async execute({ timezoneHint }: { timezoneHint: string }) {
-    const now = new Date().toISOString();
-    const note = timezoneHint ? ` (hint: ${timezoneHint})` : "";
-    return `Current time: ${now}${note}`;
+  strict: true,
+  execute: async (input, context) => {
+    try {
+      const userId = (context as any)?.context?.userId;
+      if (!userId)
+        return "No userId provided; open settings and set a user id.";
+      const mem0 = getMem0();
+      // Store as a single-message array; let Mem0 infer memories by default
+      const res = await mem0.add(
+        [{ role: "user", content: String(input.text) }],
+        {
+          user_id: userId,
+        }
+      );
+      return JSON.stringify({ ok: true, stored: res }, null, 2);
+    } catch (err: any) {
+      return `Failed to add memory: ${err?.message || String(err)}`;
+    }
   },
 });
 
-// Simple assistant agent
-const chatAgent = new Agent({
-  name: "Assistant",
-  instructions: "You are a concise, helpful chat assistant.",
-  tools: [getTimeTool],
-  // model: "gpt-5-mini", // leave default provider model unless you want to force one
+const searchMemoriesTool = tool({
+  name: "search_memories",
+  description:
+    "Search previously saved user memories relevant to the current query. Use to personalize answers when helpful.",
+  parameters: z.object({
+    query: z.string().min(1).describe("What to look up about the user"),
+    limit: z.number().int().positive().describe("Optional max items"),
+  }),
+  strict: true,
+  execute: async (input, context) => {
+    try {
+      const userId = (context as any)?.context?.userId;
+      if (!userId)
+        return "No userId provided; open settings and set a user id.";
+      const mem0 = getMem0();
+      const res = await mem0.search(String(input.query), { user_id: userId });
+      // Normalize across API shapes (array vs. object wrappers)
+      const raw = res as any;
+      let items: any[] = [];
+      if (Array.isArray(raw)) items = raw;
+      else if (Array.isArray(raw?.results)) items = raw.results;
+      else if (Array.isArray(raw?.memories)) items = raw.memories;
+      else if (Array.isArray(raw?.data)) items = raw.data;
+
+      const limited = input.limit ? items.slice(0, input.limit) : items;
+      const summaries = limited.map(
+        (m: any) =>
+          m?.memory ??
+          m?.data?.memory ??
+          m?.text ??
+          m?.content ??
+          (typeof m === "string" ? m : JSON.stringify(m))
+      );
+      return JSON.stringify(
+        { ok: true, count: items.length, memories: summaries },
+        null,
+        2
+      );
+    } catch (err: any) {
+      return `Failed to search memories: ${err?.message || String(err)}`;
+    }
+  },
 });
 
-// Convert incoming messages to AgentInputItem[]
-function toAgentHistory(
-  msgs: Array<{ role: string; text?: string; content?: string }>
-): AgentInputItem[] {
-  const out: AgentInputItem[] = [];
-  for (const m of msgs ?? []) {
-    const content = (m.content ?? m.text ?? "").toString();
-    if (!content) continue;
-    if (m.role === "user") out.push(user(content));
-    else if (m.role === "assistant") out.push(assistantMsg(content));
-    else if (m.role === "system") out.push(systemMsg(content));
-  }
-  return out;
-}
-
-// Safe getter for usage fields that may be snake or camel case depending on source
-function pickUsage(snapshot: any) {
-  const input_tokens =
-    snapshot?.input_tokens ?? snapshot?.inputTokens ?? undefined;
-  const output_tokens =
-    snapshot?.output_tokens ?? snapshot?.outputTokens ?? undefined;
-  const total_tokens =
-    snapshot?.total_tokens ??
-    snapshot?.totalTokens ??
-    (typeof input_tokens === "number" && typeof output_tokens === "number"
-      ? input_tokens + output_tokens
-      : undefined);
-
-  // Cached tokens live in details.input_tokens_details.cached_tokens on most recent SDKs
-  const cached_tokens =
-    snapshot?.details?.input_tokens_details?.cached_tokens ??
-    snapshot?.input_tokens_details?.cached_tokens ??
-    snapshot?.inputTokensDetails?.cachedTokens ??
-    snapshot?.inputTokensDetails?.[0]?.cached_tokens ??
-    undefined;
-
-  return { input_tokens, output_tokens, total_tokens, cached_tokens };
-}
-
-export async function POST(req: Request) {
+// POST /api/chat
+export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as {
-      messages?: Array<{ role: string; text?: string; content?: string }>;
-    };
+    const body = await req.json().catch(() => ({}));
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    const userId =
+      typeof body?.userId === "string" && body.userId ? body.userId : undefined;
 
-    const history = toAgentHistory(body?.messages ?? []);
-    if (history.length === 0) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "No messages provided" },
-        { status: 400 }
+        {
+          error: "Missing OPENAI_API_KEY",
+          status: 500,
+          statusText: "Server Misconfigured",
+        },
+        { status: 500 }
       );
     }
-
-    // Run agent, non streaming
-    const result = await run(chatAgent, history);
-
-    // Log final output
-    const finalText =
-      typeof result.finalOutput === "string"
-        ? result.finalOutput
-        : JSON.stringify(result.finalOutput ?? "");
-    console.log("[Agent] finalOutput:", finalText);
-
-    // Log each new item with robust accessors
-    for (const item of result.newItems ?? []) {
-      const type = item?.constructor?.name ?? "UnknownItem";
-
-      if (type === "RunToolCallItem") {
-        const raw = (item as any)?.rawItem ?? (item as any)?.raw;
-        const name = raw?.name ?? raw?.toolName ?? "(unknown_tool)";
-        // arguments can be stringified JSON or object depending on provider
-        const args = raw?.arguments ?? raw?.args ?? undefined;
-        console.log("[Agent] Tool call:", name, args);
-      } else if (type === "RunToolCallOutputItem") {
-        const raw = (item as any)?.rawItem ?? (item as any)?.raw;
-        const name = raw?.name ?? raw?.toolName ?? "(unknown_tool)";
-        const output = raw?.output ?? (item as any)?.output ?? undefined;
-        console.log("[Agent] Tool result:", name, output);
-      } else if (type === "RunMessageOutputItem") {
-        // Use helper to extract text consistently
-        const [text] = extractAllTextOutput([item]) ?? [undefined];
-        console.log("[Agent] Message:", text ?? "(no text)");
-      } else {
-        // Reasoning, approvals, handoffs, unknown
-        console.log("[Agent] Item:", type, JSON.stringify(item));
-      }
+    if (!process.env.MEM0_API_KEY) {
+      // Not fatal for chat, but tools will inform the model on usage; still surface a warning
+      // Keeping non-blocking per POC requirement
     }
 
-    // Per call usage snapshots from rawResponses
-    const usageSnapshots: Array<{
-      index: number;
-      input_tokens?: number;
-      output_tokens?: number;
-      cached_tokens?: number;
-      total_tokens?: number;
-    }> = [];
-
-    for (const [i, resp] of (result.rawResponses ?? []).entries()) {
-      // Responses API tends to put usage at top level
-      const rawUsage =
-        (resp as any)?.usage ?? (resp as any)?.response?.usage ?? {};
-      const { input_tokens, output_tokens, total_tokens, cached_tokens } =
-        pickUsage(rawUsage);
-      const snap = {
-        index: i,
-        input_tokens,
-        output_tokens,
-        cached_tokens,
-        total_tokens,
-      };
-      usageSnapshots.push(snap);
-      console.log("[Agent] Usage snapshot", snap);
-    }
-
-    // Simple final usage: just take the last snapshot (it already has combined totals)
-    const finalUsage = usageSnapshots[usageSnapshots.length - 1];
-    console.log("[Agent] Total usage after this run", {
-      input_tokens: finalUsage?.input_tokens,
-      output_tokens: finalUsage?.output_tokens,
-      cached_tokens: finalUsage?.cached_tokens,
-      total_tokens: finalUsage?.total_tokens,
+    // Build agent with tools and instructions
+    const DEFAULT_MODEL = process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-5-mini";
+    const agent = new Agent({
+      name: "Chat Assistant",
+      model: DEFAULT_MODEL,
+      instructions: ({ context }) => {
+        const uid = (context as any)?.userId
+          ? `\nActive user id: ${(context as any).userId}`
+          : "";
+        return [
+          "You are a concise, helpful chat assistant.",
+          "You have two tools to manage long-term memory about the user:",
+          "- search_memories: use when prior facts about the user could improve the answer.",
+          "- add_memory: use to store stable, privacy-safe facts (preferences, profile, recurring details).",
+          "Only store brief, non-sensitive facts. Do not store secrets, passwords, or ephemeral details.",
+          "Keep responses short and direct unless asked otherwise.",
+          uid,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      },
+      tools: [searchMemoriesTool, addMemoryTool],
+      modelSettings: {
+        providerData: {
+          reasoning: { effort: "minimal" },
+          text: { verbosity: "low" },
+        },
+      },
     });
 
-    // Emit compact events for the UI console if desired
-    const events = (result.newItems ?? []).map((it: any) => {
-      const t = it?.constructor?.name ?? "UnknownItem";
-      if (t === "RunToolCallItem") {
-        const raw = it?.rawItem ?? it?.raw;
-        return {
-          type: t,
-          data: {
-            toolName: raw?.name ?? raw?.toolName,
-            arguments: raw?.arguments,
-          },
-        };
-      }
-      if (t === "RunToolCallOutputItem") {
-        const raw = it?.rawItem ?? it?.raw;
-        return {
-          type: t,
-          data: {
-            toolName: raw?.name ?? raw?.toolName,
-            output: raw?.output ?? it?.output,
-          },
-        };
-      }
-      if (t === "RunMessageOutputItem") {
-        const [text] = extractAllTextOutput([it]) ?? [undefined];
-        return { type: t, data: { content: text } };
-      }
-      return { type: t, data: it };
+    // Translate UI messages to Agents SDK items
+    const history = messages
+      .filter(
+        (m: any) =>
+          m && typeof m.role === "string" && typeof m.content === "string"
+      )
+      .map((m: any) => {
+        if (m.role === "assistant") return assistantMsg(m.content);
+        // treat anything else as user for our POC purposes
+        return userMsg(m.content);
+      });
+
+    // Run the agent
+    const result = await run(agent, history, {
+      context: { userId },
+      maxTurns: 8,
     });
 
-    const reply = finalText;
+    // Final text output
+    const reply = (result?.finalOutput as any) || "";
+
+    // Aggregate usage across raw responses
+    let promptTokens = 0;
+    let completionTokens = 0;
+    (result?.rawResponses || []).forEach((r: any) => {
+      if (r?.usage) {
+        promptTokens += Number(r.usage.inputTokens || 0);
+        completionTokens += Number(r.usage.outputTokens || 0);
+      }
+    });
 
     return NextResponse.json({
       reply,
-      usage: finalUsage
-        ? {
-            promptTokens: finalUsage.input_tokens,
-            completionTokens: finalUsage.output_tokens,
-            cachedTokens: finalUsage.cached_tokens,
-            totalTokens: finalUsage.total_tokens,
-          }
-        : {},
-      events,
-      usageSnapshots,
+      usage: {
+        promptTokens,
+        completionTokens,
+        cachedTokens: 0,
+      },
     });
-  } catch (err: unknown) {
-    console.error("[/api/chat] Error:", err);
-    const message = err instanceof Error ? err.message : "Unknown server error";
+  } catch (err: any) {
+    const status = 500;
+    const statusText = "Internal Error";
     return NextResponse.json(
-      { error: message, status: 500, statusText: "Internal Server Error" },
-      { status: 500 }
+      {
+        error: err?.message || "Unknown error",
+        status,
+        statusText,
+        upstream: String(err),
+      },
+      { status }
     );
   }
 }
