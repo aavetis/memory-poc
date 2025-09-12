@@ -164,42 +164,14 @@ export default function ChatPOC() {
       }
       const data = await res.json();
       const replyText: string = data.reply || "(empty response)";
-      const usageForMessage = (() => {
-        type UnknownRecord = Record<string, unknown>;
-        const maybeUsage =
-          data && typeof data === "object" && "usage" in data
-            ? (data as UnknownRecord).usage
-            : undefined;
-        if (!maybeUsage || typeof maybeUsage !== "object") return undefined;
-        const u = maybeUsage as UnknownRecord;
-        const prompt =
-          typeof u.prompt_tokens === "number"
-            ? (u.prompt_tokens as number)
-            : undefined;
-        const completion =
-          typeof u.completion_tokens === "number"
-            ? (u.completion_tokens as number)
-            : undefined;
-        const promptDetails =
-          typeof u.prompt_tokens_details === "object" && u.prompt_tokens_details
-            ? (u.prompt_tokens_details as UnknownRecord)
-            : undefined;
-        const cached =
-          promptDetails && typeof promptDetails.cached_tokens === "number"
-            ? (promptDetails.cached_tokens as number)
-            : undefined;
-        if (
-          prompt === undefined &&
-          completion === undefined &&
-          cached === undefined
-        )
-          return undefined;
-        return {
-          promptTokens: prompt,
-          completionTokens: completion,
-          cachedTokens: cached,
-        };
-      })();
+      // Simplified: backend now guarantees camelCase usage keys always present.
+      const usageForMessage = data.usage
+        ? {
+            promptTokens: data.usage.promptTokens ?? 0,
+            completionTokens: data.usage.completionTokens ?? 0,
+            cachedTokens: data.usage.cachedTokens ?? 0,
+          }
+        : undefined;
       setErrorDetails(null);
       setMessages((prev) => [
         ...prev,
@@ -549,5 +521,3 @@ function nowTime() {
   const mm = d.getMinutes().toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
-
-// (Removed old fakeReply/hash helpers after backend integration)
