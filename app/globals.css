@@ -149,13 +149,41 @@
 @layer components {
   [data-slot="card"] {
     border-width: 2px;
-    box-shadow: 6px 6px 0 0 var(--ring);
   }
   [data-slot="button"] {
     border-width: 2px;
-    box-shadow: 4px 4px 0 0 var(--ring);
   }
   [data-slot="input"] {
     border-width: 2px;
+  }
+  [data-slot="card"] {
+    overflow: hidden;
+  }
+  [data-slot="separator-root"][data-orientation="horizontal"] {
+    height: 2px;
+  }
+  [data-slot="separator-root"][data-orientation="vertical"] {
+    width: 2px;
+  }
+}
+
+/* Utilities layer overrides beat Tailwind utility classes like shadow-* */
+@layer utilities {
+  /* Offset shadow only for solid-style buttons */
+  [data-slot="button"] {
+    box-shadow: none;
+  }
+  [data-slot="button"].bg-primary,
+  [data-slot="button"].bg-destructive,
+  [data-slot="button"].bg-secondary {
+    box-shadow: 4px 4px 0 0 var(--ring);
+  }
+
+  /* Remove default drop shadow on card and inputs */
+  [data-slot="card"] {
+    box-shadow: none;
+  }
+  [data-slot="input"] {
+    box-shadow: none;
   }
 }

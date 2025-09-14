@@ -162,7 +162,7 @@ export default function ChatPOC() {
 
   return (
     <div className="min-h-screen bg-background grid place-items-center p-6">
-      <Card className="w-full max-w-5xl shadow-lg gap-0 pb-0">
+      <Card className="w-full max-w-5xl gap-0 pb-0">
         <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle className="text-xl tracking-tight">Chat POC</CardTitle>
           <div className="flex items-center gap-2">
@@ -175,9 +175,8 @@ export default function ChatPOC() {
               Reset
             </Button>
             <Button
-              variant="ghost"
-              size="icon"
-              className="hover:bg-neutral-100"
+              variant="outline"
+              size="sm"
               aria-expanded={showSettings}
               aria-controls="settings-panel"
               onClick={() => setShowSettings((s) => !s)}
@@ -218,7 +217,7 @@ export default function ChatPOC() {
                 <div ref={scrollRef} />
               </div>
               {/* Composer */}
-              <div className="border-t bg-white p-3">
+              <div className="border-t-2 bg-card p-3">
                 <form className="flex items-center gap-2" onSubmit={onSubmit}>
                   <Input
                     placeholder="Type a message…"
@@ -234,6 +233,7 @@ export default function ChatPOC() {
                   <Button
                     type="submit"
                     variant="default"
+                    className="bg-blue-700 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500"
                     disabled={!draft.trim() || sendingRef.current}
                   >
                     {sendingRef.current ? (
@@ -265,7 +265,7 @@ export default function ChatPOC() {
             {/* Right-side settings column, always on-page, not a modal */}
             <aside
               id="settings-panel"
-              className={`hidden md:block w-[360px] lg:w-[400px] border-l bg-white ${
+              className={`hidden md:block w-[280px] lg:w-[320px] border-l-2 bg-card ${
                 showSettings ? "" : "md:hidden"
               }`}
             >
@@ -364,15 +364,17 @@ function Message({
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
-          isUser ? "bg-black text-white" : "bg-white border border-neutral-200"
+        className={`max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
+          isUser
+            ? "bg-blue-700 text-white border-2 border-border shadow-[4px_4px_0_0_var(--ring)] dark:bg-blue-600"
+            : "bg-card border-2 border-border shadow-[4px_4px_0_0_var(--ring)]"
         }`}
       >
         <div>{text}</div>
         {(timestamp || (isAssistant && usage)) && (
           <div
-            className={`mt-1 text-[10px] opacity-60 flex flex-wrap gap-x-2 gap-y-0.5 ${
-              isUser ? "text-white" : "text-neutral-600"
+            className={`mt-1 text-[10px] flex flex-wrap gap-x-2 gap-y-0.5 ${
+              isUser ? "text-white/80" : "text-foreground/60"
             }`}
           >
             {timestamp && <span>{timestamp}</span>}
