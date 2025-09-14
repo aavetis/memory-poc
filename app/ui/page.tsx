@@ -161,8 +161,8 @@ export default function ChatPOC() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 grid place-items-center p-6">
-      <Card className="w-full max-w-5xl shadow-lg border-neutral-200 gap-0 pb-0">
+    <div className="min-h-screen bg-background grid place-items-center p-6">
+      <Card className="w-full max-w-5xl shadow-lg gap-0 pb-0">
         <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle className="text-xl tracking-tight">Chat POC</CardTitle>
           <div className="flex items-center gap-2">
