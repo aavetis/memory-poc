@@ -11,6 +11,47 @@ import { Settings, Send } from "lucide-react";
 
 // Minimal, elegant, isolated chat POC with a right-side settings panel that is always on-page
 export default function ChatPOC() {
+  // Simple static password gate (client-side only)
+  const SITE_PASSWORD = process.env.NEXT_PUBLIC_SITE_PASSWORD;
+  const STORAGE_KEY = "site:password";
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    // If no password set, allow access
+    if (!SITE_PASSWORD) {
+      setAuthorized(true);
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === SITE_PASSWORD) {
+        setAuthorized(true);
+        return;
+      }
+    } catch {}
+
+    // Prompt loop until correct or cancel
+    const ask = () => {
+      const input = window.prompt("Enter site password:") ?? null;
+      if (input === null) {
+        // user cancelled: stay unauthorized
+        return;
+      }
+      if (input === SITE_PASSWORD) {
+        try {
+          localStorage.setItem(STORAGE_KEY, input);
+        } catch {}
+        setAuthorized(true);
+      } else {
+        alert("Incorrect password");
+        // try again
+        setTimeout(ask, 0);
+      }
+    };
+    ask();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [showSettings, setShowSettings] = useState(true);
 
   // Chat state
@@ -58,6 +99,11 @@ export default function ChatPOC() {
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  // After all hooks are declared, gate rendering by authorization
+  if (!authorized) {
+    return null;
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
