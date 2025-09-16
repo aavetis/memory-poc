@@ -26,8 +26,7 @@ function getMem0() {
 // Tools: add_memory, search_memories
 const addMemoryTool = tool({
   name: "add_memory",
-  description:
-    "Persist a short, stable, privacy-safe fact about the user. Use for preferences, profile or long-term facts. Avoid secrets or ephemeral info.",
+  description: "Use this tool to write memories associated with the user.",
   parameters: z.object({
     text: z
       .string()
@@ -41,14 +40,25 @@ const addMemoryTool = tool({
       if (!userId)
         return "No userId provided; open settings and set a user id.";
       const mem0 = getMem0();
-      // Store as a single-message array; let Mem0 infer memories by default
-      const res = await mem0.add(
-        [{ role: "user", content: String(input.text) }],
-        {
-          user_id: userId,
+      // Queue the write and return immediately so we don't block the agent
+      const text = String(input.text);
+      const write = async () => {
+        try {
+          // Store as a single-message array; let Mem0 infer memories by default
+          await mem0.add(
+            [{ role: "user", content: text }],
+            {
+              user_id: userId,
+            }
+          );
+        } catch (e: any) {
+          console.error("Async memory write failed:", e?.message || e);
         }
-      );
-      return JSON.stringify({ ok: true, stored: res }, null, 2);
+      };
+      // Detach the task; do not await (best-effort fire-and-forget)
+      if (typeof setImmediate === "function") setImmediate(write);
+      else Promise.resolve().then(write);
+      return JSON.stringify({ ok: true, queued: true }, null, 2);
     } catch (err: any) {
       return `Failed to add memory: ${err?.message || String(err)}`;
     }
@@ -128,20 +138,19 @@ export async function POST(req: NextRequest) {
       name: "Chat Assistant",
       model: DEFAULT_MODEL,
       instructions: ({ context }) => {
-        const uid = (context as any)?.userId
-          ? `\nActive user id: ${(context as any).userId}`
-          : "";
-        return [
-          "You are a concise, helpful chat assistant.",
-          "You have two tools to manage long-term memory about the user:",
-          "- search_memories: use when prior facts about the user could improve the answer.",
-          "- add_memory: use to store stable, privacy-safe facts (preferences, profile, recurring details).",
-          "Only store brief, non-sensitive facts. Do not store secrets, passwords, or ephemeral details.",
-          "Keep responses short and direct unless asked otherwise.",
-          uid,
-        ]
-          .filter(Boolean)
-          .join("\n");
+        const userId = (context as any)?.userId;
+        return `You are a concise, helpful chat assistant.
+        You have two tools to manage long-term memory about the user:
+        - search_memories: use when prior facts about the user could improve the answer.
+        - add_memory: use to store stable, privacy-safe facts (preferences, profile, recurring details). Writes are queued asynchronously; it's okay if the tool returns a queued confirmation.
+
+        Write a new memory anytime we discuss anything that may be relevant to my advertising learning journey. This includes topics I'm interested in, concepts I struggle with, learning milestones I've reached, and anything else that would be helpful to know for a tutor for advertising professionals.
+
+        Only store brief, non-sensitive facts. Do not store secrets, passwords, or ephemeral details.
+        Keep responses short and direct unless asked otherwise.
+
+        When retreiving memories, identify the most relevant ones and bring detail from them into your answer. Continue conversations, using memories to pick back up where we left off.
+        ${userId ? `\nActive user id: ${userId}` : ""}`;
       },
       tools: [searchMemoriesTool, addMemoryTool],
       modelSettings: {
