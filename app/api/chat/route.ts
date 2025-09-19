@@ -110,49 +110,53 @@ function buildToolParameters(schema: ToolParameterSchema) {
     const zodType = buildZodForProperty(prop);
     shape[key] = zodType;
   }
-  let obj = z.object(shape);
-  if (schema.additionalProperties === false) {
-    obj = obj.strict();
-  }
-  if (schema.description) {
-    obj = obj.describe(schema.description);
-  }
-  return obj;
+  const base = z.object(shape);
+  return schema.description ? base.describe(schema.description) : base;
 }
 
 function buildZodForProperty(prop: ToolParameterProperty) {
   let base: z.ZodTypeAny;
   switch (prop.type) {
     case "string":
-      base = z.string();
-      if (typeof prop.minLength === "number") {
-        base = base.min(prop.minLength);
+      {
+        if (prop.enum && prop.enum.length) {
+          base = z.enum(prop.enum as [string, ...string[]]);
+          break;
+        }
+        let schema = z.string();
+        if (typeof prop.minLength === "number") {
+          schema = schema.min(prop.minLength);
+        }
+        if (typeof prop.maxLength === "number") {
+          schema = schema.max(prop.maxLength);
+        }
+        base = schema;
+        break;
       }
-      if (typeof prop.maxLength === "number") {
-        base = base.max(prop.maxLength);
-      }
-      if (prop.enum && prop.enum.length) {
-        base = z.enum(prop.enum as [string, ...string[]]);
-      }
-      break;
     case "integer":
-      base = z.number().int();
-      if (typeof prop.minimum === "number") {
-        base = base.min(prop.minimum);
+      {
+        let schema = z.number().int();
+        if (typeof prop.minimum === "number") {
+          schema = schema.min(prop.minimum);
+        }
+        if (typeof prop.maximum === "number") {
+          schema = schema.max(prop.maximum);
+        }
+        base = schema;
+        break;
       }
-      if (typeof prop.maximum === "number") {
-        base = base.max(prop.maximum);
-      }
-      break;
     case "number":
-      base = z.number();
-      if (typeof prop.minimum === "number") {
-        base = base.min(prop.minimum);
+      {
+        let schema = z.number();
+        if (typeof prop.minimum === "number") {
+          schema = schema.min(prop.minimum);
+        }
+        if (typeof prop.maximum === "number") {
+          schema = schema.max(prop.maximum);
+        }
+        base = schema;
+        break;
       }
-      if (typeof prop.maximum === "number") {
-        base = base.max(prop.maximum);
-      }
-      break;
     case "boolean":
       base = z.boolean();
       break;
@@ -176,7 +180,6 @@ function buildTools(definitions: ToolDefinition[]) {
       name: definition.name,
       description: definition.description,
       parameters,
-      strict: definition.strict ?? false,
       execute: executor,
     });
   });

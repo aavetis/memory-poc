@@ -646,7 +646,7 @@ function SettingsPanel({
             <Button
               type="button"
               variant="outline"
-              size="xs"
+              size="sm"
               onClick={onResetTools}
             >
               Reset to defaults
