@@ -6,8 +6,90 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_TOOL_DEFINITIONS,
+  ToolDefinition,
+  ToolParameterProperty,
+} from "@/lib/default-settings";
+
 // Switch removed along with save history feature
 import { Settings, Send } from "lucide-react";
+
+function cloneToolParameterProperty(
+  prop: ToolParameterProperty
+): ToolParameterProperty {
+  return {
+    ...prop,
+    enum: prop.enum ? [...prop.enum] : undefined,
+  };
+}
+
+function cloneToolDefinition(def: ToolDefinition): ToolDefinition {
+  const propertiesEntries = Object.entries(def.parameters.properties || {}).map(
+    ([key, value]) => [key, cloneToolParameterProperty(value)] as const
+  );
+  const propertyKeys = propertiesEntries.map(([key]) => key);
+  return {
+    ...def,
+    parameters: {
+      ...def.parameters,
+      required: propertyKeys,
+      properties: Object.fromEntries(propertiesEntries),
+    },
+  };
+}
+
+function cloneToolDefinitions(defs: ToolDefinition[]): ToolDefinition[] {
+  return defs.map((def) => cloneToolDefinition(def));
+}
+
+function validateToolDefinitionsForUI(
+  defs: ToolDefinition[]
+): string | null {
+  for (let i = 0; i < defs.length; i += 1) {
+    const tool = defs[i];
+    const label = tool.name?.trim() || `Tool ${i + 1}`;
+    if (!tool.name?.trim()) {
+      return `${label} needs a name.`;
+    }
+    if (!tool.description?.trim()) {
+      return `${label} needs a description.`;
+    }
+    const parameters = tool.parameters;
+    if (!parameters || parameters.type !== "object") {
+      return `${label} is missing parameter definitions.`;
+    }
+    if (!parameters.properties || !Object.keys(parameters.properties).length) {
+      return `${label} must have at least one parameter.`;
+    }
+    const properties = parameters.properties;
+    const propertyKeys = Object.keys(properties);
+    const requiredSet = new Set(
+      parameters.required && parameters.required.length
+        ? parameters.required
+        : propertyKeys
+    );
+    if (requiredSet.size !== propertyKeys.length) {
+      return `${label} must set every parameter as required.`;
+    }
+    for (const key of propertyKeys) {
+      if (!requiredSet.has(key)) {
+        return `${label}.${key} must be marked as required.`;
+      }
+    }
+    for (const [propName, prop] of Object.entries(properties)) {
+      if (!prop) {
+        return `${label} has an invalid parameter: ${propName}.`;
+      }
+      if (!prop.type) {
+        return `${label}.${propName} is missing a type.`;
+      }
+    }
+  }
+  return null;
+}
 
 // Minimal, elegant, isolated chat POC with a right-side settings panel that is always on-page
 export default function ChatPOC() {
@@ -82,6 +164,28 @@ export default function ChatPOC() {
     null
   );
   const [userId, setUserId] = useState<string>("");
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
+  const [toolDefinitions, setToolDefinitions] = useState<ToolDefinition[]>(() =>
+    cloneToolDefinitions(DEFAULT_TOOL_DEFINITIONS)
+  );
+  const [toolValidationError, setToolValidationError] = useState<string | null>(
+    validateToolDefinitionsForUI(DEFAULT_TOOL_DEFINITIONS)
+  );
+  const updateToolDefinition = useCallback(
+    (index: number, updater: (tool: ToolDefinition) => ToolDefinition) => {
+      setToolDefinitions((prev) => {
+        const next = prev.map((tool, i) => (i === index ? updater(tool) : tool));
+        setToolValidationError(validateToolDefinitionsForUI(next));
+        return next;
+      });
+    },
+    []
+  );
+  const resetToolDefinitions = useCallback(() => {
+    const defaults = cloneToolDefinitions(DEFAULT_TOOL_DEFINITIONS);
+    setToolDefinitions(defaults);
+    setToolValidationError(validateToolDefinitionsForUI(defaults));
+  }, []);
   // Removed global cumulative usage display per request
 
   // Save history feature removed: no local storage persistence
@@ -108,6 +212,14 @@ export default function ChatPOC() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!draft.trim() || sendingRef.current) return;
+    const currentToolValidation = validateToolDefinitionsForUI(toolDefinitions);
+    if (currentToolValidation) {
+      setToolValidationError(currentToolValidation);
+      setError(
+        "Tool definitions incomplete. Fix the entries in Settings before chatting."
+      );
+      return;
+    }
 
     const userMsg: MessageItem = {
       id: cryptoId(),
@@ -126,12 +238,18 @@ export default function ChatPOC() {
         messages: { role: string; content: string }[];
         stream?: boolean;
         userId?: string;
+        systemPrompt?: string;
+        toolDefinitions?: ToolDefinition[];
       }
       const base: PayloadBase = {
         messages: [...buildContext(), { role: "user", content: userMsg.text }],
         userId: userId || undefined,
       };
-      const bodyPayload: PayloadBase = base; // no temperature field
+      const bodyPayload: PayloadBase = {
+        ...base,
+        systemPrompt,
+        toolDefinitions,
+      };
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -315,7 +433,16 @@ export default function ChatPOC() {
                 showSettings ? "" : "md:hidden"
               }`}
             >
-              <SettingsPanel userId={userId} setUserId={setUserId} />
+              <SettingsPanel
+                userId={userId}
+                setUserId={setUserId}
+                systemPrompt={systemPrompt}
+                setSystemPrompt={setSystemPrompt}
+                toolDefinitions={toolDefinitions}
+                onToolDefinitionChange={updateToolDefinition}
+                onResetTools={resetToolDefinitions}
+                toolValidationError={toolValidationError}
+              />
             </aside>
           </div>
         </CardContent>
@@ -455,9 +582,30 @@ function formatTokens(n: number) {
 interface SettingsPanelProps {
   userId: string;
   setUserId: (v: string) => void;
+  systemPrompt: string;
+  setSystemPrompt: (v: string) => void;
+  toolDefinitions: ToolDefinition[];
+  onToolDefinitionChange: (
+    index: number,
+    updater: (tool: ToolDefinition) => ToolDefinition
+  ) => void;
+  onResetTools: () => void;
+  toolValidationError: string | null;
 }
 
-function SettingsPanel({ userId, setUserId }: SettingsPanelProps) {
+function SettingsPanel({
+  userId,
+  setUserId,
+  systemPrompt,
+  setSystemPrompt,
+  toolDefinitions,
+  onToolDefinitionChange,
+  onResetTools,
+  toolValidationError,
+}: SettingsPanelProps) {
+  const toolErrorId = toolValidationError
+    ? "settings-tool-definitions-error"
+    : undefined;
   return (
     <div className="h-full flex flex-col">
       <div className="p-4">
@@ -466,12 +614,162 @@ function SettingsPanel({ userId, setUserId }: SettingsPanelProps) {
       <Separator />
       <div className="p-4 overflow-y-auto space-y-6 text-sm">
         <div className="grid gap-2">
-          <Label>User ID</Label>
+          <Label htmlFor="settings-user-id">User ID</Label>
           <Input
+            id="settings-user-id"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
             placeholder="e.g. user-123 or email"
           />
+          <p className="text-[11px] text-muted-foreground">
+            Used by the memory tools to scope reads and writes.
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="settings-system-prompt">System Prompt</Label>
+          <Textarea
+            id="settings-system-prompt"
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            className="min-h-[160px] text-xs"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Applied to the agent before each run. Updates take effect immediately.
+          </p>
+        </div>
+        <div
+          className="space-y-3"
+          aria-describedby={toolErrorId}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Tools</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={onResetTools}
+            >
+              Reset to defaults
+            </Button>
+          </div>
+          {toolValidationError ? (
+            <p
+              id={toolErrorId}
+              className="text-[11px] text-red-600"
+            >
+              {toolValidationError}
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Edit tool names, descriptions, or parameter copy.
+            </p>
+          )}
+          <div className="space-y-4">
+            {toolDefinitions.map((tool, toolIndex) => (
+              <div
+                key={`${tool.name}-${toolIndex}`}
+                className="rounded-md border border-border bg-background/60 p-3 space-y-3"
+              >
+                <div className="grid gap-2">
+                  <Label htmlFor={`tool-${toolIndex}-name`}>Tool name</Label>
+                  <Input
+                    id={`tool-${toolIndex}-name`}
+                    value={tool.name}
+                    onChange={(e) =>
+                      onToolDefinitionChange(toolIndex, (current) => ({
+                        ...current,
+                        name: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor={`tool-${toolIndex}-description`}>
+                    Tool description
+                  </Label>
+                  <Textarea
+                    id={`tool-${toolIndex}-description`}
+                    value={tool.description}
+                    onChange={(e) =>
+                      onToolDefinitionChange(toolIndex, (current) => ({
+                        ...current,
+                        description: e.target.value,
+                      }))
+                    }
+                    className="min-h-[100px] text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Parameters
+                  </div>
+                  {(() => {
+                    const propertyEntries = Object.entries(
+                      tool.parameters.properties
+                    );
+                    const requiredSet = new Set(
+                      tool.parameters.required &&
+                        tool.parameters.required.length
+                        ? tool.parameters.required
+                        : propertyEntries.map(([propKey]) => propKey)
+                    );
+                    return propertyEntries.map(([propKey, propValue]) => {
+                      const isRequired = requiredSet.has(propKey);
+                      const enumValues = propValue.enum;
+                      return (
+                        <div
+                          key={propKey}
+                          className="rounded border border-border/60 bg-card/50 p-2 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
+                            <span className="uppercase tracking-wide">
+                              {propKey}
+                            </span>
+                            <span>
+                              {propValue.type}
+                              {isRequired ? " • required" : ""}
+                            </span>
+                          </div>
+                          {enumValues && enumValues.length ? (
+                            <div className="text-[10px] text-muted-foreground">
+                              Options: {enumValues.join(", ")}
+                            </div>
+                          ) : null}
+                          <Textarea
+                            value={propValue.description ?? ""}
+                            onChange={(e) =>
+                              onToolDefinitionChange(
+                                toolIndex,
+                                (current) => {
+                                  const nextProperty: ToolParameterProperty = {
+                                    ...current.parameters.properties[propKey],
+                                    description: e.target.value,
+                                  };
+                                  const nextProperties = {
+                                    ...current.parameters.properties,
+                                    [propKey]: nextProperty,
+                                  };
+                                  return {
+                                    ...current,
+                                    parameters: {
+                                      ...current.parameters,
+                                      properties: nextProperties,
+                                      required: Object.keys(nextProperties),
+                                    },
+                                  };
+                                }
+                              )
+                            }
+                            className="min-h-[80px] text-xs"
+                          />
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         {/* Save history removed */}
       </div>
