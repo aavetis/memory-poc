@@ -30,9 +30,10 @@ function getMem0() {
   return mem0Client;
 }
 
-type ToolExecutor = (input: Record<string, unknown>, context: unknown) =>
-  | Promise<string>
-  | string;
+type ToolExecutor = (
+  input: Record<string, unknown>,
+  context: unknown
+) => Promise<string> | string;
 
 const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
   add_memory: async (input, context) => {
@@ -48,12 +49,9 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
       // Queue the write and return immediately so we don't block the agent
       const write = async () => {
         try {
-          await mem0.add(
-            [{ role: "user", content: text }],
-            {
-              user_id: userId,
-            }
-          );
+          await mem0.add([{ role: "user", content: text }], {
+            user_id: userId,
+          });
         } catch (e: any) {
           console.error("Async memory write failed:", e?.message || e);
         }
@@ -117,46 +115,43 @@ function buildToolParameters(schema: ToolParameterSchema) {
 function buildZodForProperty(prop: ToolParameterProperty) {
   let base: z.ZodTypeAny;
   switch (prop.type) {
-    case "string":
-      {
-        if (prop.enum && prop.enum.length) {
-          base = z.enum(prop.enum as [string, ...string[]]);
-          break;
-        }
-        let schema = z.string();
-        if (typeof prop.minLength === "number") {
-          schema = schema.min(prop.minLength);
-        }
-        if (typeof prop.maxLength === "number") {
-          schema = schema.max(prop.maxLength);
-        }
-        base = schema;
+    case "string": {
+      if (prop.enum && prop.enum.length) {
+        base = z.enum(prop.enum as [string, ...string[]]);
         break;
       }
-    case "integer":
-      {
-        let schema = z.number().int();
-        if (typeof prop.minimum === "number") {
-          schema = schema.min(prop.minimum);
-        }
-        if (typeof prop.maximum === "number") {
-          schema = schema.max(prop.maximum);
-        }
-        base = schema;
-        break;
+      let schema = z.string();
+      if (typeof prop.minLength === "number") {
+        schema = schema.min(prop.minLength);
       }
-    case "number":
-      {
-        let schema = z.number();
-        if (typeof prop.minimum === "number") {
-          schema = schema.min(prop.minimum);
-        }
-        if (typeof prop.maximum === "number") {
-          schema = schema.max(prop.maximum);
-        }
-        base = schema;
-        break;
+      if (typeof prop.maxLength === "number") {
+        schema = schema.max(prop.maxLength);
       }
+      base = schema;
+      break;
+    }
+    case "integer": {
+      let schema = z.number().int();
+      if (typeof prop.minimum === "number") {
+        schema = schema.min(prop.minimum);
+      }
+      if (typeof prop.maximum === "number") {
+        schema = schema.max(prop.maximum);
+      }
+      base = schema;
+      break;
+    }
+    case "number": {
+      let schema = z.number();
+      if (typeof prop.minimum === "number") {
+        schema = schema.min(prop.minimum);
+      }
+      if (typeof prop.maximum === "number") {
+        schema = schema.max(prop.maximum);
+      }
+      base = schema;
+      break;
+    }
     case "boolean":
       base = z.boolean();
       break;
@@ -173,7 +168,9 @@ function buildTools(definitions: ToolDefinition[]) {
   return definitions.map((definition, index) => {
     const executor = TOOL_EXECUTORS[definition.name];
     if (!executor) {
-      throw new Error(`Unsupported tool name at index ${index}: ${definition.name}`);
+      throw new Error(
+        `Unsupported tool name at index ${index}: ${definition.name}`
+      );
     }
     const parameters = buildToolParameters(definition.parameters);
     return tool({
@@ -197,7 +194,9 @@ function normalizeToolDefinitions(input: unknown): ToolDefinition[] {
     const candidate = item as Record<string, unknown>;
     const name = candidate.name;
     if (typeof name !== "string" || !name.trim()) {
-      throw new Error(`Tool definition at index ${index} is missing a valid name.`);
+      throw new Error(
+        `Tool definition at index ${index} is missing a valid name.`
+      );
     }
     const description = candidate.description;
     if (typeof description !== "string" || !description.trim()) {

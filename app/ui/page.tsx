@@ -45,9 +45,7 @@ function cloneToolDefinitions(defs: ToolDefinition[]): ToolDefinition[] {
   return defs.map((def) => cloneToolDefinition(def));
 }
 
-function validateToolDefinitionsForUI(
-  defs: ToolDefinition[]
-): string | null {
+function validateToolDefinitionsForUI(defs: ToolDefinition[]): string | null {
   for (let i = 0; i < defs.length; i += 1) {
     const tool = defs[i];
     const label = tool.name?.trim() || `Tool ${i + 1}`;
@@ -174,7 +172,9 @@ export default function ChatPOC() {
   const updateToolDefinition = useCallback(
     (index: number, updater: (tool: ToolDefinition) => ToolDefinition) => {
       setToolDefinitions((prev) => {
-        const next = prev.map((tool, i) => (i === index ? updater(tool) : tool));
+        const next = prev.map((tool, i) =>
+          i === index ? updater(tool) : tool
+        );
         setToolValidationError(validateToolDefinitionsForUI(next));
         return next;
       });
@@ -631,16 +631,14 @@ function SettingsPanel({
             id="settings-system-prompt"
             value={systemPrompt}
             onChange={(e) => setSystemPrompt(e.target.value)}
-            className="min-h-[160px] text-xs"
+            className="min-h-[160px] h-[300px] text-xs"
           />
           <p className="text-[11px] text-muted-foreground">
-            Applied to the agent before each run. Updates take effect immediately.
+            Applied to the agent before each run. Updates take effect
+            immediately.
           </p>
         </div>
-        <div
-          className="space-y-3"
-          aria-describedby={toolErrorId}
-        >
+        <div className="space-y-3" aria-describedby={toolErrorId}>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Tools</span>
             <Button
@@ -653,10 +651,7 @@ function SettingsPanel({
             </Button>
           </div>
           {toolValidationError ? (
-            <p
-              id={toolErrorId}
-              className="text-[11px] text-red-600"
-            >
+            <p id={toolErrorId} className="text-[11px] text-red-600">
               {toolValidationError}
             </p>
           ) : (
@@ -709,7 +704,7 @@ function SettingsPanel({
                     );
                     const requiredSet = new Set(
                       tool.parameters.required &&
-                        tool.parameters.required.length
+                      tool.parameters.required.length
                         ? tool.parameters.required
                         : propertyEntries.map(([propKey]) => propKey)
                     );
@@ -738,27 +733,24 @@ function SettingsPanel({
                           <Textarea
                             value={propValue.description ?? ""}
                             onChange={(e) =>
-                              onToolDefinitionChange(
-                                toolIndex,
-                                (current) => {
-                                  const nextProperty: ToolParameterProperty = {
-                                    ...current.parameters.properties[propKey],
-                                    description: e.target.value,
-                                  };
-                                  const nextProperties = {
-                                    ...current.parameters.properties,
-                                    [propKey]: nextProperty,
-                                  };
-                                  return {
-                                    ...current,
-                                    parameters: {
-                                      ...current.parameters,
-                                      properties: nextProperties,
-                                      required: Object.keys(nextProperties),
-                                    },
-                                  };
-                                }
-                              )
+                              onToolDefinitionChange(toolIndex, (current) => {
+                                const nextProperty: ToolParameterProperty = {
+                                  ...current.parameters.properties[propKey],
+                                  description: e.target.value,
+                                };
+                                const nextProperties = {
+                                  ...current.parameters.properties,
+                                  [propKey]: nextProperty,
+                                };
+                                return {
+                                  ...current,
+                                  parameters: {
+                                    ...current.parameters,
+                                    properties: nextProperties,
+                                    required: Object.keys(nextProperties),
+                                  },
+                                };
+                              })
                             }
                             className="min-h-[80px] text-xs"
                           />
