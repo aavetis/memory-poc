@@ -13,6 +13,7 @@ import {
   ToolDefinition,
   ToolParameterProperty,
 } from "@/lib/default-settings";
+import { useSitePasswordGate } from "@/hooks/use-site-password";
 
 // Switch removed along with save history feature
 import { Settings, Send } from "lucide-react";
@@ -91,46 +92,7 @@ function validateToolDefinitionsForUI(defs: ToolDefinition[]): string | null {
 
 // Minimal, elegant, isolated chat POC with a right-side settings panel that is always on-page
 export default function ChatPOC() {
-  // Simple static password gate (client-side only)
-  const SITE_PASSWORD = process.env.NEXT_PUBLIC_SITE_PASSWORD;
-  const STORAGE_KEY = "site:password";
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    // If no password set, allow access
-    if (!SITE_PASSWORD) {
-      setAuthorized(true);
-      return;
-    }
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === SITE_PASSWORD) {
-        setAuthorized(true);
-        return;
-      }
-    } catch {}
-
-    // Prompt loop until correct or cancel
-    const ask = () => {
-      const input = window.prompt("Enter site password:") ?? null;
-      if (input === null) {
-        // user cancelled: stay unauthorized
-        return;
-      }
-      if (input === SITE_PASSWORD) {
-        try {
-          localStorage.setItem(STORAGE_KEY, input);
-        } catch {}
-        setAuthorized(true);
-      } else {
-        alert("Incorrect password");
-        // try again
-        setTimeout(ask, 0);
-      }
-    };
-    ask();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const authorized = useSitePasswordGate();
 
   const [showSettings, setShowSettings] = useState(true);
 
