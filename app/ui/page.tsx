@@ -93,7 +93,6 @@ function validateToolDefinitionsForUI(defs: ToolDefinition[]): string | null {
 // Minimal, elegant, isolated chat POC with a right-side settings panel that is always on-page
 export default function ChatPOC() {
   const authorized = useSitePasswordGate();
-
   const [showSettings, setShowSettings] = useState(true);
 
   // Chat state
@@ -166,7 +165,6 @@ export default function ChatPOC() {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  // After all hooks are declared, gate rendering by authorization
   if (!authorized) {
     return null;
   }
@@ -287,8 +285,8 @@ export default function ChatPOC() {
   };
 
   return (
-    <div className="min-h-screen bg-background grid place-items-center p-6">
-      <Card className="w-full max-w-5xl gap-0 pb-0">
+    <div className="min-h-screen bg-background p-6 md:p-10">
+      <Card className="mx-auto w-full max-w-5xl gap-0 pb-0">
         <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle className="text-xl tracking-tight">Chat POC</CardTitle>
           <div className="flex items-center gap-2">

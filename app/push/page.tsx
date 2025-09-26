@@ -125,10 +125,6 @@ export default function PushDemoPage() {
   const [lastMemoriesUser, setLastMemoriesUser] = useState<string | null>(null);
   const [lastMessageUser, setLastMessageUser] = useState<string | null>(null);
 
-  if (!authorized) {
-    return null;
-  }
-
   const disabled = !userId.trim();
 
   const handleFetchMemories = async () => {
@@ -202,11 +198,15 @@ export default function PushDemoPage() {
     }
   };
 
+  if (!authorized) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-background p-8 md:p-10">
       <Card className="mx-auto flex w-full max-w-4xl flex-col min-h-[760px] md:min-h-[820px]">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Push Workflow Demo</CardTitle>
+          <CardTitle className="text-xl">Push</CardTitle>
           <p className="text-sm text-muted-foreground">
             Trigger the proactive agent workflow and peek at the user memories
             powering it.
